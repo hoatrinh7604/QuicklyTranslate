@@ -8,7 +8,7 @@ using TMPro;
 using System;
 using System.Linq;
 using UnityEditor;
-
+using SimpleJSON;
 
 [System.Serializable]
 public class SupprotLanguageData
@@ -46,7 +46,7 @@ public class Translation
 
 public class Controller : MonoBehaviour
 {
-    [SerializeField] TMP_InputField paragraph;
+    [SerializeField] InputField paragraph;
 
     [SerializeField] GameObject listFieldParent;
     [SerializeField] GameObject groupAnswer;
@@ -56,12 +56,12 @@ public class Controller : MonoBehaviour
     public NumberFormatInfo NFI = new NumberFormatInfo { NumberDecimalSeparator = ",", NumberGroupSeparator = "." };
 
     [SerializeField] TMP_Dropdown dropdown;
-    [SerializeField] TextMeshProUGUI resultTranslate;
+    [SerializeField] Text resultTranslate;
     [SerializeField] Button translateButton;
     [SerializeField] Button copyButton;
     [SerializeField] GameObject copyPopup;
     [SerializeField] GameObject loading;
-
+    [SerializeField] TextAsset languageSupport;
     SupprotLanguageData languageData = new SupprotLanguageData();
     //Singleton
     public static Controller Instance { get; private set; }
@@ -96,24 +96,35 @@ public class Controller : MonoBehaviour
     }
     IEnumerator GetSupportLanguage(System.Action callback)
     {
-        var url = "https://google-translate1.p.rapidapi.com/language/translate/v2/languages?target=en";
+        yield return new WaitForSeconds(1);
+        //var url = "https://google-translate1.p.rapidapi.com/language/translate/v2/languages?target=en";
 
-        UnityWebRequest wwwLogin = UnityWebRequest.Get(url);
-        wwwLogin.SetRequestHeader("X-RapidAPI-Key", "8780c671c2msh34873a0f47bb233p15fd52jsn0311c30c572d");
-        wwwLogin.SetRequestHeader("X-RapidAPI-Host", "google-translate1.p.rapidapi.com");
+        //UnityWebRequest wwwLogin = UnityWebRequest.Get(url);
+        //wwwLogin.SetRequestHeader("X-RapidAPI-Key", "8780c671c2msh34873a0f47bb233p15fd52jsn0311c30c572d");
+        //wwwLogin.SetRequestHeader("X-RapidAPI-Host", "google-translate1.p.rapidapi.com");
 
-        yield return wwwLogin.SendWebRequest();
+        //yield return wwwLogin.SendWebRequest();
 
-        if (wwwLogin.result != UnityWebRequest.Result.Success)
-        {
-            Debug.Log(wwwLogin.error);
-        }
-        else
-        {
-            var res = JsonUtility.FromJson<SupprotLanguageRoot>(wwwLogin.downloadHandler.text);
-            languageData = res.data;
-            callback();
-        }
+        //if (wwwLogin.result != UnityWebRequest.Result.Success)
+        //{
+        //    Debug.Log(wwwLogin.error);
+        //}
+        //else
+        //{
+        //    var res = JsonUtility.FromJson<SupprotLanguageRoot>(wwwLogin.downloadHandler.text);
+        //    languageData = res.data;
+        //    callback();
+        //}
+
+        var res = JsonUtility.FromJson<SupprotLanguageRoot>(languageSupport.text);
+        languageData = res.data;
+        callback();
+    }
+
+
+    public void AddLanguage()
+    {
+        
     }
 
     IEnumerator GetTranslateLanguage()
@@ -147,7 +158,8 @@ public class Controller : MonoBehaviour
     }
     public void CopyToClipboard()
     {
-        EditorGUIUtility.systemCopyBuffer = GetResultString();
+        GUIUtility.systemCopyBuffer = GetResultString();
+        //EditorGUIUtility.systemCopyBuffer = GetResultString();
         StartCoroutine(Copied());
     }
 
@@ -173,10 +185,65 @@ public class Controller : MonoBehaviour
 
     public void Translate()
     {
-        StartCoroutine(GetTranslateLanguage());
+        StartCoroutine(Process());
     }
 
+    public IEnumerator Process()
+    {
+        string targetLang = languageData.languages[dropdown.value].language;
+        string sourceText = paragraph.text;
+        // We use Auto by default to determine if google can figure it out.. sometimes it can't.
+        string sourceLang = "auto";
+        // Construct the url using our variables and googles api.
+        string url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl="
+            + sourceLang + "&tl=" + targetLang + "&dt=t&q=" + UnityWebRequest.EscapeURL(sourceText);
 
+        using (UnityWebRequest webRequest = UnityWebRequest.Get(url))
+        {
+            // Request and wait for the desired page.
+            yield return webRequest.SendWebRequest();
+
+            // Check to see if we don't have any errors.
+            if (webRequest.result != UnityWebRequest.Result.Success)
+            {
+                Debug.Log(webRequest.error);
+            }
+            else
+            {
+                //var res = JsonUtility.FromJson<TranslationRoot>(webRequest.downloadHandler.text);
+                //if (res.data.translations.Count > 0)
+                //    resultTranslate.text = res.data.translations[0].translatedText;
+
+                var TableReturned = JSONNode.Parse(webRequest.downloadHandler.text);
+                string tranlatedText = "";
+                for (int i = 0; (i < TableReturned[0].Count); i++)
+                    tranlatedText += ((string)TableReturned[0][i][0]);
+
+                resultTranslate.text = tranlatedText.ToString();
+            }
+        }
+    }
+
+    // Exactly the same as above but allow the user to change from Auto, for when google get's all Jerk Butt-y
+    public IEnumerator Process(string sourceLang, string targetLang, string sourceText)
+    {
+        string url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl="
+            + sourceLang + "&tl=" + targetLang + "&dt=t&q=" + UnityWebRequest.EscapeURL(sourceText);
+
+        using (UnityWebRequest webRequest = UnityWebRequest.Get(url))
+        {
+            // Request and wait for the desired page.
+            yield return webRequest.SendWebRequest();
+
+            // Check to see if we don't have any errors.
+            if (string.IsNullOrEmpty(webRequest.error))
+            {
+                var res = JsonUtility.FromJson<TranslationRoot>(webRequest.downloadHandler.text);
+                if (res.data.translations.Count > 0)
+                    resultTranslate.text = res.data.translations[0].translatedText;
+            }
+        }
+    }
     public void Reset()
     {
         loading.SetActive(true);
